@@ -6,6 +6,7 @@ enum Credentials: Codable, Sendable, Equatable {
     case azure(tenantId: String, clientId: String, clientSecret: String, subscriptionId: String)
     case cloudflare(apiToken: String, accountId: String)
     case openai(apiKey: String, organizationId: String? = nil)
+    case openaiOAuth(accessToken: String, refreshToken: String, expiresAt: Date, accountId: String)
     case anthropic(apiKey: String)
     case gemini(apiKey: String)
     case grok(apiKey: String)
@@ -17,6 +18,7 @@ enum Credentials: Codable, Sendable, Equatable {
         case .azure: .azure
         case .cloudflare: .cloudflare
         case .openai: .openai
+        case .openaiOAuth: .openai
         case .anthropic: .anthropic
         case .gemini: .gemini
         case .grok: .grok
@@ -36,6 +38,8 @@ enum Credentials: Codable, Sendable, Equatable {
             !token.isEmpty && !account.isEmpty
         case .openai(let key, _):
             !key.isEmpty
+        case .openaiOAuth(let access, let refresh, _, let accountId):
+            !access.isEmpty && !refresh.isEmpty && !accountId.isEmpty
         case .anthropic(let key):
             !key.isEmpty
         case .gemini(let key):
