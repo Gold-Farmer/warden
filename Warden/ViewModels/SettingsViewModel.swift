@@ -3,13 +3,19 @@ import Foundation
 @MainActor
 @Observable
 final class SettingsViewModel {
-    private let registry: ServiceRegistry
+    let registry: ServiceRegistry
+    let accountStore: AccountStore
     private let keychain = KeychainManager.shared
 
     var refreshInterval: TimeInterval = 300
-    var credentialForms: [Provider: CredentialForm] = [:]
-    var testResults: [Provider: TestResult] = [:]
-    var isTesting: [Provider: Bool] = [:]
+    var credentialForms: [UUID: CredentialForm] = [:]
+    var testResults: [UUID: TestResult] = [:]
+    var isTesting: [UUID: Bool] = [:]
+
+    // Add-account sheet state
+    var showingAddAccount = false
+    var newAccountProvider: Provider = .aws
+    var newAccountLabel = ""
 
     struct CredentialForm {
         // AWS
@@ -41,92 +47,110 @@ final class SettingsViewModel {
         case failure(String)
     }
 
-    init(registry: ServiceRegistry) {
+    init(registry: ServiceRegistry, accountStore: AccountStore) {
         self.registry = registry
-        // Initialize forms for all providers
-        for provider in Provider.allCases {
-            credentialForms[provider] = CredentialForm()
-        }
+        self.accountStore = accountStore
         loadExistingCredentials()
     }
 
     func loadExistingCredentials() {
-        for provider in Provider.allCases {
-            guard let creds = keychain.load(for: provider) else { continue }
-            var form = credentialForms[provider] ?? CredentialForm()
-
-            switch creds {
-            case .aws(let key, let secret, let region, let token):
-                form.awsAccessKeyId = key
-                form.awsSecretAccessKey = secret
-                form.awsRegion = region
-                form.awsSessionToken = token ?? ""
-            case .gcp(let json):
-                form.gcpServiceAccountJSON = String(data: json, encoding: .utf8) ?? ""
-            case .azure(let tenant, let client, let secret, let sub):
-                form.azureTenantId = tenant
-                form.azureClientId = client
-                form.azureClientSecret = secret
-                form.azureSubscriptionId = sub
-            case .cloudflare(let token, let account):
-                form.cloudflareApiToken = token
-                form.cloudflareAccountId = account
-            case .openai(let key, let org):
-                form.apiKey = key
-                form.organizationId = org ?? ""
-            case .anthropic(let key):
-                form.apiKey = key
-            case .gemini(let key):
-                form.apiKey = key
-            case .grok(let key):
-                form.apiKey = key
+        for account in accountStore.accounts {
+            guard let creds = keychain.load(for: account.id) else {
+                credentialForms[account.id] = CredentialForm()
+                continue
             }
-
-            credentialForms[provider] = form
+            var form = CredentialForm()
+            populateForm(&form, from: creds)
+            credentialForms[account.id] = form
         }
     }
 
-    func save(provider: Provider) {
-        guard let form = credentialForms[provider] else { return }
-        let credentials = buildCredentials(provider: provider, form: form)
+    func addAccount() {
+        let label = newAccountLabel.isEmpty ? newAccountProvider.displayName : newAccountLabel
+        let account = accountStore.addAccount(providerType: newAccountProvider, label: label)
+        credentialForms[account.id] = CredentialForm()
+        newAccountLabel = ""
+        newAccountProvider = .aws
+        showingAddAccount = false
+    }
+
+    func removeAccount(_ account: Account) {
+        try? keychain.delete(for: account.id)
+        Task { await registry.unregister(account.id) }
+        credentialForms.removeValue(forKey: account.id)
+        testResults.removeValue(forKey: account.id)
+        accountStore.removeAccount(account.id)
+    }
+
+    func save(account: Account) {
+        guard let form = credentialForms[account.id] else { return }
+        let credentials = buildCredentials(provider: account.providerType, form: form)
         guard let credentials, credentials.isValid else { return }
 
-        try? keychain.save(credentials, for: provider)
+        try? keychain.save(credentials, for: account.id)
 
-        // Reconfigure the service
         Task {
-            if let service = await registry.service(for: provider) {
+            if let service = await registry.service(for: account.id) {
                 try? await service.configure(with: credentials)
             }
         }
     }
 
-    func testConnection(provider: Provider) async {
-        guard let form = credentialForms[provider] else { return }
-        let credentials = buildCredentials(provider: provider, form: form)
+    func testConnection(account: Account) async {
+        guard let form = credentialForms[account.id] else { return }
+        let credentials = buildCredentials(provider: account.providerType, form: form)
         guard let credentials, credentials.isValid else {
-            testResults[provider] = .failure("Invalid credentials")
+            testResults[account.id] = .failure("Invalid credentials")
             return
         }
 
-        isTesting[provider] = true
-        defer { isTesting[provider] = false }
+        isTesting[account.id] = true
+        defer { isTesting[account.id] = false }
 
-        if let service = await registry.service(for: provider) {
+        if let service = await registry.service(for: account.id) {
             do {
                 try await service.configure(with: credentials)
                 _ = try await service.fetchStatus()
-                testResults[provider] = .success
+                testResults[account.id] = .success
             } catch {
-                testResults[provider] = .failure(error.localizedDescription)
+                testResults[account.id] = .failure(error.localizedDescription)
             }
         }
     }
 
-    func deleteCredentials(provider: Provider) {
-        try? keychain.delete(for: provider)
-        credentialForms[provider] = CredentialForm()
-        testResults.removeValue(forKey: provider)
+    func deleteCredentials(account: Account) {
+        try? keychain.delete(for: account.id)
+        credentialForms[account.id] = CredentialForm()
+        testResults.removeValue(forKey: account.id)
+    }
+
+    private func populateForm(_ form: inout CredentialForm, from creds: Credentials) {
+        switch creds {
+        case .aws(let key, let secret, let region, let token):
+            form.awsAccessKeyId = key
+            form.awsSecretAccessKey = secret
+            form.awsRegion = region
+            form.awsSessionToken = token ?? ""
+        case .gcp(let json):
+            form.gcpServiceAccountJSON = String(data: json, encoding: .utf8) ?? ""
+        case .azure(let tenant, let client, let secret, let sub):
+            form.azureTenantId = tenant
+            form.azureClientId = client
+            form.azureClientSecret = secret
+            form.azureSubscriptionId = sub
+        case .cloudflare(let token, let account):
+            form.cloudflareApiToken = token
+            form.cloudflareAccountId = account
+        case .openai(let key, let org):
+            form.apiKey = key
+            form.organizationId = org ?? ""
+        case .anthropic(let key):
+            form.apiKey = key
+        case .gemini(let key):
+            form.apiKey = key
+        case .grok(let key):
+            form.apiKey = key
+        }
     }
 
     private func buildCredentials(provider: Provider, form: CredentialForm) -> Credentials? {

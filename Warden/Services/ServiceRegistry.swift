@@ -1,49 +1,50 @@
 import Foundation
 
 actor ServiceRegistry {
-    private var services: [Provider: any ProviderService] = [:]
+    private var services: [UUID: any ProviderService] = [:]
 
-    func register(_ service: any ProviderService) async {
-        let provider = await service.provider
-        services[provider] = service
+    func register(_ service: any ProviderService, for accountId: UUID) {
+        services[accountId] = service
     }
 
-    func service(for provider: Provider) -> (any ProviderService)? {
-        services[provider]
+    func unregister(_ accountId: UUID) {
+        services.removeValue(forKey: accountId)
     }
 
-    var allServices: [any ProviderService] {
-        Array(services.values)
+    func service(for accountId: UUID) -> (any ProviderService)? {
+        services[accountId]
     }
 
-    var configuredProviders: [Provider] {
-        get async {
-            var result: [Provider] = []
-            for (provider, service) in services {
-                if await service.isConfigured {
-                    result.append(provider)
-                }
+    var allAccountIds: [UUID] {
+        Array(services.keys)
+    }
+
+    func configuredAccountIds() async -> [UUID] {
+        var result: [UUID] = []
+        for (id, service) in services {
+            if await service.isConfigured {
+                result.append(id)
             }
-            return result
         }
+        return result
     }
 
-    func fetchAll() async -> [Provider: Result<ProviderStatus, Error>] {
-        await withTaskGroup(of: (Provider, Result<ProviderStatus, Error>).self) { group in
-            for (provider, service) in services where await service.isConfigured {
+    func fetchAll() async -> [UUID: Result<ProviderStatus, Error>] {
+        await withTaskGroup(of: (UUID, Result<ProviderStatus, Error>).self) { group in
+            for (id, service) in services where await service.isConfigured {
                 group.addTask {
                     do {
                         let status = try await service.fetchStatus()
-                        return (provider, .success(status))
+                        return (id, .success(status))
                     } catch {
-                        return (provider, .failure(error))
+                        return (id, .failure(error))
                     }
                 }
             }
 
-            var results: [Provider: Result<ProviderStatus, Error>] = [:]
-            for await (provider, result) in group {
-                results[provider] = result
+            var results: [UUID: Result<ProviderStatus, Error>] = [:]
+            for await (id, result) in group {
+                results[id] = result
             }
             return results
         }

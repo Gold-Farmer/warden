@@ -8,6 +8,10 @@ struct ProviderDetailView: View {
         viewModel.status ?? dashboardStatus
     }
 
+    private var provider: Provider {
+        viewModel.account.providerType
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
@@ -29,7 +33,7 @@ struct ProviderDetailView: View {
             .padding(8)
         }
         .background(Color.grafanaBg)
-        .navigationTitle(viewModel.provider.displayName)
+        .navigationTitle(viewModel.account.label)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 RefreshButton(
@@ -49,9 +53,9 @@ struct ProviderDetailView: View {
 
     private var headerPanel: some View {
         GrafanaPanel(
-            title: viewModel.provider.displayName,
-            icon: viewModel.provider.iconName,
-            accentColor: viewModel.provider.grafanaColor,
+            title: viewModel.account.label,
+            icon: provider.iconName,
+            accentColor: provider.grafanaColor,
             headerTrailing: AnyView(StatusBadge(health: status?.health ?? .unknown))
         ) {
             HStack(spacing: 24) {
@@ -106,7 +110,7 @@ struct ProviderDetailView: View {
     private func gaugeRow(_ status: ProviderStatus) -> some View {
         HStack(spacing: 8) {
             ForEach(gaugeResources(status).prefix(4)) { resource in
-                GrafanaPanel(title: resource.name, accentColor: viewModel.provider.grafanaColor) {
+                GrafanaPanel(title: resource.name, accentColor: provider.grafanaColor) {
                     VStack {
                         Spacer()
                         GaugeArcView(
@@ -130,7 +134,7 @@ struct ProviderDetailView: View {
         GrafanaPanel(
             title: "Resources",
             icon: "list.bullet",
-            accentColor: viewModel.provider.grafanaColor
+            accentColor: provider.grafanaColor
         ) {
             VStack(spacing: 0) {
                 // Table header
