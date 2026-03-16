@@ -8,6 +8,7 @@ enum Credentials: Codable, Sendable, Equatable {
     case openai(apiKey: String, organizationId: String? = nil)
     case openaiOAuth(accessToken: String, refreshToken: String, expiresAt: Date, accountId: String)
     case anthropic(apiKey: String)
+    case anthropicOAuth(accessToken: String, refreshToken: String, expiresAt: Date)
     case gemini(apiKey: String)
     case grok(apiKey: String)
 
@@ -20,6 +21,7 @@ enum Credentials: Codable, Sendable, Equatable {
         case .openai: .openai
         case .openaiOAuth: .openai
         case .anthropic: .anthropic
+        case .anthropicOAuth: .anthropic
         case .gemini: .gemini
         case .grok: .grok
         }
@@ -42,6 +44,8 @@ enum Credentials: Codable, Sendable, Equatable {
             !access.isEmpty && !refresh.isEmpty && !accountId.isEmpty
         case .anthropic(let key):
             !key.isEmpty
+        case .anthropicOAuth(let access, let refresh, _):
+            !access.isEmpty && !refresh.isEmpty
         case .gemini(let key):
             !key.isEmpty
         case .grok(let key):

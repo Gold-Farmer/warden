@@ -148,6 +148,8 @@ final class SettingsViewModel {
             break // OAuth tokens are managed internally
         case .anthropic(let key):
             form.apiKey = key
+        case .anthropicOAuth:
+            break // OAuth tokens are managed internally
         case .gemini(let key):
             form.apiKey = key
         case .grok(let key):

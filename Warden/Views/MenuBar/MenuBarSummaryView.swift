@@ -246,8 +246,9 @@ struct MenuBarSummaryView: View {
 
     // MARK: - Credential Form
 
-    private enum AIAuthMethod: String, CaseIterable {
+    private enum AnthropicAuthMethod: String, CaseIterable {
         case apiKey = "API Key"
+        case claude = "Login with Claude"
         case env = "Environment Variable"
     }
 
@@ -258,7 +259,8 @@ struct MenuBarSummaryView: View {
     }
 
     @State private var openaiAuthMethod: OpenAIAuthMethod = .apiKey
-    @State private var anthropicAuthMethod: AIAuthMethod = .apiKey
+    @State private var anthropicAuthMethod: AnthropicAuthMethod = .apiKey
+    @State private var anthropicOAuthCode = ""
     @State private var formApiKey = ""
     @State private var formOrganizationId = ""
     @State private var formLabel = ""
@@ -275,6 +277,7 @@ struct MenuBarSummaryView: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @StateObject private var oauthClient = OpenAIOAuthClient()
+    @StateObject private var anthropicOAuthClient = AnthropicOAuthClient()
 
     private func credentialForm(for provider: Provider) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -459,7 +462,7 @@ struct MenuBarSummaryView: View {
 
     private var anthropicAuthMethodPicker: some View {
         HStack(spacing: 0) {
-            ForEach(AIAuthMethod.allCases, id: \.self) { method in
+            ForEach(AnthropicAuthMethod.allCases, id: \.self) { method in
                 Button {
                     anthropicAuthMethod = method
                 } label: {
@@ -492,6 +495,69 @@ struct MenuBarSummaryView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11))
             standardActionButtons(for: .anthropic)
+
+        case .claude:
+            if anthropicOAuthClient.waitingForCode {
+                Text("Paste the authorization code from your browser:")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.grafanaTextSecondary)
+
+                TextField("Authorization code", text: $anthropicOAuthCode)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, design: .monospaced))
+
+                HStack {
+                    backButton
+                    Spacer()
+                    Button {
+                        Task { await exchangeAnthropicCode() }
+                    } label: {
+                        if anthropicOAuthClient.isAuthenticating {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Submit")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(anthropicOAuthCode.isEmpty || anthropicOAuthClient.isAuthenticating)
+                }
+            } else if anthropicOAuthClient.isAuthenticating {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Opening browser…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.grafanaTextSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            } else {
+                Text("Opens your browser to sign in with your Claude account (Pro/Max).")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.grafanaTextSecondary)
+
+                HStack {
+                    backButton
+                    Spacer()
+                    Button {
+                        Task { await anthropicOAuthClient.login() }
+                    } label: {
+                        Label("Login", systemImage: "arrow.up.forward")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+
+            if let error = anthropicOAuthClient.error {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.grafanaRed)
+            }
 
         case .env:
             let envKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]
@@ -544,6 +610,11 @@ struct MenuBarSummaryView: View {
                 }
             }
         }
+    }
+
+    private func exchangeAnthropicCode() async {
+        guard let credentials = await anthropicOAuthClient.exchangeCode(anthropicOAuthCode) else { return }
+        await createAndConfigureAccount(provider: .anthropic, credentials: credentials)
     }
 
     // MARK: - Shared Buttons
@@ -725,6 +796,7 @@ struct MenuBarSummaryView: View {
         saveError = nil
         openaiAuthMethod = .apiKey
         anthropicAuthMethod = .apiKey
+        anthropicOAuthCode = ""
     }
 
     // MARK: - Loading
