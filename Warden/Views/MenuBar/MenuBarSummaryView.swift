@@ -246,6 +246,11 @@ struct MenuBarSummaryView: View {
 
     // MARK: - Credential Form
 
+    private enum AIAuthMethod: String, CaseIterable {
+        case apiKey = "API Key"
+        case env = "Environment Variable"
+    }
+
     private enum OpenAIAuthMethod: String, CaseIterable {
         case apiKey = "API Key"
         case chatgpt = "Login with ChatGPT"
@@ -253,6 +258,7 @@ struct MenuBarSummaryView: View {
     }
 
     @State private var openaiAuthMethod: OpenAIAuthMethod = .apiKey
+    @State private var anthropicAuthMethod: AIAuthMethod = .apiKey
     @State private var formApiKey = ""
     @State private var formOrganizationId = ""
     @State private var formLabel = ""
@@ -292,6 +298,9 @@ struct MenuBarSummaryView: View {
                 if provider == .openai {
                     openaiAuthMethodPicker
                     openaiAuthFields
+                } else if provider == .anthropic {
+                    anthropicAuthMethodPicker
+                    anthropicAuthFields
                 } else {
                     credentialFields(for: provider)
                     standardActionButtons(for: provider)
@@ -433,6 +442,97 @@ struct MenuBarSummaryView: View {
                         .foregroundStyle(.grafanaRed)
                         .font(.system(size: 12))
                     Text("OPENAI_API_KEY not found in environment")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.grafanaTextSecondary)
+                }
+                .padding(.vertical, 4)
+
+                HStack {
+                    backButton
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    // MARK: - Anthropic Auth Method Picker
+
+    private var anthropicAuthMethodPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(AIAuthMethod.allCases, id: \.self) { method in
+                Button {
+                    anthropicAuthMethod = method
+                } label: {
+                    Text(method.rawValue)
+                        .font(.system(size: 10, weight: anthropicAuthMethod == method ? .semibold : .regular))
+                        .foregroundStyle(anthropicAuthMethod == method ? .grafanaTextPrimary : .grafanaTextDisabled)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(anthropicAuthMethod == method ? Color.grafanaHoverBg : .clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(Color.grafanaPanelBg)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.grafanaPanelBorder)
+        )
+    }
+
+    // MARK: - Anthropic Auth Fields
+
+    @ViewBuilder
+    private var anthropicAuthFields: some View {
+        switch anthropicAuthMethod {
+        case .apiKey:
+            SecureField("API Key", text: $formApiKey)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+            standardActionButtons(for: .anthropic)
+
+        case .env:
+            let envKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]
+            if let key = envKey, !key.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.grafanaGreen)
+                        .font(.system(size: 12))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("ANTHROPIC_API_KEY detected")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.grafanaTextPrimary)
+                        Text("sk-…\(String(key.suffix(4)))")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.grafanaTextSecondary)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                HStack {
+                    backButton
+                    Spacer()
+                    Button {
+                        Task {
+                            let credentials = Credentials.anthropic(apiKey: key)
+                            await createAndConfigureAccount(provider: .anthropic, credentials: credentials)
+                        }
+                    } label: {
+                        Text("Use This Key")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(isSaving)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.grafanaRed)
+                        .font(.system(size: 12))
+                    Text("ANTHROPIC_API_KEY not found in environment")
                         .font(.system(size: 11))
                         .foregroundStyle(.grafanaTextSecondary)
                 }
@@ -624,6 +724,7 @@ struct MenuBarSummaryView: View {
         formGcpJSON = ""
         saveError = nil
         openaiAuthMethod = .apiKey
+        anthropicAuthMethod = .apiKey
     }
 
     // MARK: - Loading
