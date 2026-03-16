@@ -6,36 +6,34 @@ import SwiftUI
 final class DashboardViewModel {
     let registry: ServiceRegistry
     let scheduler: RefreshScheduler
+    let accountStore: AccountStore
 
-    var providerStatuses: [Provider: ProviderStatus] = [:]
-    var errors: [Provider: Error] = [:]
+    var accountStatuses: [UUID: ProviderStatus] = [:]
+    var errors: [UUID: Error] = [:]
     var isLoading = false
     var lastRefresh: Date?
 
     // Computed
     var totalMonthlyCost: Decimal {
-        providerStatuses.values.compactMap(\.totalMonthlyCost).reduce(Decimal.zero, +)
+        accountStatuses.values.compactMap(\.totalMonthlyCost).reduce(Decimal.zero, +)
     }
 
     var overallHealth: ProviderStatus.Health {
-        let statuses = providerStatuses.values.map(\.health)
+        let statuses = accountStatuses.values.map(\.health)
         if statuses.contains(.critical) { return .critical }
         if statuses.contains(.warning) { return .warning }
         if statuses.isEmpty { return .unknown }
         return .healthy
     }
 
-    var configuredProviders: [Provider] {
-        Provider.allCases.filter { providerStatuses[$0] != nil || errors[$0] != nil }
+    var configuredAccounts: [Account] {
+        accountStore.accounts.filter { accountStatuses[$0.id] != nil || errors[$0.id] != nil }
     }
 
-    var unconfiguredProviders: [Provider] {
-        Provider.allCases.filter { !configuredProviders.contains($0) }
-    }
-
-    init(registry: ServiceRegistry, scheduler: RefreshScheduler) {
+    init(registry: ServiceRegistry, scheduler: RefreshScheduler, accountStore: AccountStore) {
         self.registry = registry
         self.scheduler = scheduler
+        self.accountStore = accountStore
         self.scheduler.onRefresh = { [weak self] in
             await self?.refreshAll()
         }
@@ -49,49 +47,52 @@ final class DashboardViewModel {
         }
 
         let results = await registry.fetchAll()
-        for (provider, result) in results {
+        for (id, result) in results {
             switch result {
             case .success(let status):
-                providerStatuses[provider] = status
-                errors.removeValue(forKey: provider)
+                accountStatuses[id] = status
+                errors.removeValue(forKey: id)
             case .failure(let error):
-                errors[provider] = error
+                errors[id] = error
             }
         }
     }
 
-    func refresh(provider: Provider) async {
-        guard let service = await registry.service(for: provider) else { return }
+    func refresh(accountId: UUID) async {
+        guard let service = await registry.service(for: accountId) else { return }
 
         do {
             let status = try await service.fetchStatus()
-            providerStatuses[provider] = status
-            errors.removeValue(forKey: provider)
+            accountStatuses[accountId] = status
+            errors.removeValue(forKey: accountId)
         } catch {
-            errors[provider] = error
+            errors[accountId] = error
         }
     }
 
     func loadCredentialsAndConfigure() async {
         let keychain = KeychainManager.shared
-        let allServices: [(Provider, () -> any ProviderService)] = [
-            (.aws, { AWSService() }),
-            (.gcp, { GCPService() }),
-            (.azure, { AzureService() }),
-            (.cloudflare, { CloudflareService() }),
-            (.openai, { OpenAIService() }),
-            (.anthropic, { AnthropicService() }),
-            (.gemini, { GeminiService() }),
-            (.grok, { GrokService() }),
-        ]
 
-        for (provider, makeService) in allServices {
-            let service = makeService()
-            await registry.register(service)
+        for account in accountStore.accounts {
+            let service = makeService(for: account.providerType)
+            await registry.register(service, for: account.id)
 
-            if let creds = keychain.load(for: provider) {
+            if let creds = keychain.load(for: account.id) {
                 try? await service.configure(with: creds)
             }
+        }
+    }
+
+    private func makeService(for provider: Provider) -> any ProviderService {
+        switch provider {
+        case .aws: AWSService()
+        case .gcp: GCPService()
+        case .azure: AzureService()
+        case .cloudflare: CloudflareService()
+        case .openai: OpenAIService()
+        case .anthropic: AnthropicService()
+        case .gemini: GeminiService()
+        case .grok: GrokService()
         }
     }
 }

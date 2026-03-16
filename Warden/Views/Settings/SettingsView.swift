@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
-    @State private var expandedProvider: Provider?
+    @State private var expandedAccountId: UUID?
 
     var body: some View {
         Form {
@@ -16,51 +16,93 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Cloud Providers") {
-                ForEach(Provider.allCases.filter(\.isCloudProvider)) { provider in
-                    credentialSection(for: provider)
+            Section {
+                ForEach(viewModel.accountStore.accounts) { account in
+                    accountSection(for: account)
                 }
-            }
 
-            Section("AI Services") {
-                ForEach(Provider.allCases.filter(\.isAIProvider)) { provider in
-                    credentialSection(for: provider)
+                Button {
+                    viewModel.showingAddAccount = true
+                } label: {
+                    Label("Add Account", systemImage: "plus.circle.fill")
                 }
+            } header: {
+                Text("Accounts")
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
+        .sheet(isPresented: $viewModel.showingAddAccount) {
+            addAccountSheet
+        }
     }
 
+    // MARK: - Add Account Sheet
+
+    private var addAccountSheet: some View {
+        VStack(spacing: 16) {
+            Text("Add Account")
+                .font(.headline)
+
+            Picker("Provider", selection: $viewModel.newAccountProvider) {
+                ForEach(Provider.allCases) { provider in
+                    Label(provider.displayName, systemImage: provider.iconName)
+                        .tag(provider)
+                }
+            }
+            .pickerStyle(.menu)
+
+            TextField("Label (optional)", text: $viewModel.newAccountLabel)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button("Cancel") {
+                    viewModel.showingAddAccount = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Add") {
+                    viewModel.addAccount()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(24)
+        .frame(width: 320)
+    }
+
+    // MARK: - Per-Account Section
+
     @ViewBuilder
-    private func credentialSection(for provider: Provider) -> some View {
+    private func accountSection(for account: Account) -> some View {
         DisclosureGroup(
             isExpanded: Binding(
-                get: { expandedProvider == provider },
-                set: { expandedProvider = $0 ? provider : nil }
+                get: { expandedAccountId == account.id },
+                set: { expandedAccountId = $0 ? account.id : nil }
             )
         ) {
-            credentialFields(for: provider)
+            credentialFields(for: account)
 
             HStack {
                 Button("Save") {
-                    viewModel.save(provider: provider)
+                    viewModel.save(account: account)
                 }
                 .buttonStyle(.borderedProminent)
 
                 Button("Test Connection") {
-                    Task { await viewModel.testConnection(provider: provider) }
+                    Task { await viewModel.testConnection(account: account) }
                 }
-                .disabled(viewModel.isTesting[provider] == true)
+                .disabled(viewModel.isTesting[account.id] == true)
 
-                if viewModel.isTesting[provider] == true {
+                if viewModel.isTesting[account.id] == true {
                     ProgressView()
                         .controlSize(.small)
                 }
 
                 Spacer()
 
-                if let result = viewModel.testResults[provider] {
+                if let result = viewModel.testResults[account.id] {
                     switch result {
                     case .success:
                         Label("Connected", systemImage: "checkmark.circle.fill")
@@ -73,18 +115,25 @@ struct SettingsView: View {
                 }
 
                 Button("Delete", role: .destructive) {
-                    viewModel.deleteCredentials(provider: provider)
+                    viewModel.deleteCredentials(account: account)
+                }
+
+                Button("Remove Account", role: .destructive) {
+                    viewModel.removeAccount(account)
                 }
             }
             .padding(.top, 8)
         } label: {
             HStack {
-                Image(systemName: provider.iconName)
-                    .foregroundStyle(provider.brandColor)
+                Image(systemName: account.providerType.iconName)
+                    .foregroundStyle(account.providerType.brandColor)
                     .frame(width: 24)
-                Text(provider.displayName)
+                Text(account.label)
+                Text("(\(account.providerType.displayName))")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
                 Spacer()
-                if KeychainManager.shared.hasCredentials(for: provider) {
+                if KeychainManager.shared.hasCredentials(for: account.id) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.caption)
@@ -93,14 +142,16 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Credential Fields
+
     @ViewBuilder
-    private func credentialFields(for provider: Provider) -> some View {
+    private func credentialFields(for account: Account) -> some View {
         let form = Binding(
-            get: { viewModel.credentialForms[provider] ?? SettingsViewModel.CredentialForm() },
-            set: { viewModel.credentialForms[provider] = $0 }
+            get: { viewModel.credentialForms[account.id] ?? SettingsViewModel.CredentialForm() },
+            set: { viewModel.credentialForms[account.id] = $0 }
         )
 
-        switch provider {
+        switch account.providerType {
         case .aws:
             SecureField("Access Key ID", text: form.awsAccessKeyId)
             SecureField("Secret Access Key", text: form.awsSecretAccessKey)

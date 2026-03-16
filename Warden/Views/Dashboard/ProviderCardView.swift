@@ -1,15 +1,15 @@
 import SwiftUI
 
 struct ProviderCardView: View {
-    let provider: Provider
+    let account: Account
     let status: ProviderStatus?
     let error: Error?
 
     var body: some View {
         GrafanaPanel(
-            title: provider.displayName,
-            icon: provider.iconName,
-            accentColor: provider.grafanaColor,
+            title: account.label,
+            icon: account.providerType.iconName,
+            accentColor: account.providerType.grafanaColor,
             headerTrailing: headerTrailingView
         ) {
             VStack(alignment: .leading, spacing: 0) {

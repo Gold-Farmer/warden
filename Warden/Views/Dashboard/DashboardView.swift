@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @Bindable var viewModel: DashboardViewModel
-    @State private var expandedRows: Set<String> = ["summary", "cloud", "ai", "unconfigured"]
+    @State private var expandedRows: Set<String> = ["summary", "cloud", "ai"]
 
     private let columns = [
         GridItem(.adaptive(minimum: 300, maximum: 450), spacing: 8)
@@ -20,15 +20,15 @@ struct DashboardView: View {
                 }
 
                 // Cloud providers row
-                if !cloudProviders.isEmpty {
+                if !cloudAccounts.isEmpty {
                     grafanaRow("cloud", title: "Cloud Infrastructure") {
                         LazyVGrid(columns: columns, spacing: 8) {
-                            ForEach(cloudProviders) { provider in
-                                NavigationLink(value: provider) {
+                            ForEach(cloudAccounts) { account in
+                                NavigationLink(value: account) {
                                     ProviderCardView(
-                                        provider: provider,
-                                        status: viewModel.providerStatuses[provider],
-                                        error: viewModel.errors[provider]
+                                        account: account,
+                                        status: viewModel.accountStatuses[account.id],
+                                        error: viewModel.errors[account.id]
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -38,34 +38,18 @@ struct DashboardView: View {
                 }
 
                 // AI providers row
-                if !aiProviders.isEmpty {
+                if !aiAccounts.isEmpty {
                     grafanaRow("ai", title: "AI Services") {
                         LazyVGrid(columns: columns, spacing: 8) {
-                            ForEach(aiProviders) { provider in
-                                NavigationLink(value: provider) {
+                            ForEach(aiAccounts) { account in
+                                NavigationLink(value: account) {
                                     ProviderCardView(
-                                        provider: provider,
-                                        status: viewModel.providerStatuses[provider],
-                                        error: viewModel.errors[provider]
+                                        account: account,
+                                        status: viewModel.accountStatuses[account.id],
+                                        error: viewModel.errors[account.id]
                                     )
                                 }
                                 .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-
-                // Unconfigured row
-                if !viewModel.unconfiguredProviders.isEmpty {
-                    grafanaRow("unconfigured", title: "Not Configured") {
-                        LazyVGrid(columns: columns, spacing: 8) {
-                            ForEach(viewModel.unconfiguredProviders) { provider in
-                                ProviderCardView(
-                                    provider: provider,
-                                    status: nil,
-                                    error: nil
-                                )
-                                .opacity(0.5)
                             }
                         }
                     }
@@ -75,13 +59,13 @@ struct DashboardView: View {
         }
         .background(Color.grafanaBg)
         .navigationTitle("Warden")
-        .navigationDestination(for: Provider.self) { provider in
+        .navigationDestination(for: Account.self) { account in
             ProviderDetailView(
                 viewModel: ProviderDetailViewModel(
-                    provider: provider,
+                    account: account,
                     registry: viewModel.registry
                 ),
-                dashboardStatus: viewModel.providerStatuses[provider]
+                dashboardStatus: viewModel.accountStatuses[account.id]
             )
         }
         .task {
@@ -105,8 +89,8 @@ struct DashboardView: View {
                     .foregroundStyle(.grafanaTextPrimary)
             }
 
-            // Provider count badge
-            Text("\(viewModel.configuredProviders.count)/\(Provider.allCases.count) providers")
+            // Account count badge
+            Text("\(viewModel.configuredAccounts.count) accounts")
                 .font(.system(size: 10))
                 .foregroundStyle(.grafanaTextDisabled)
                 .padding(.horizontal, 8)
@@ -116,7 +100,7 @@ struct DashboardView: View {
             Spacer()
 
             // Overall health
-            if !viewModel.providerStatuses.isEmpty {
+            if !viewModel.accountStatuses.isEmpty {
                 StatusBadge(health: viewModel.overallHealth)
             }
 
@@ -181,16 +165,16 @@ struct DashboardView: View {
             StatPanelView(
                 title: "Total Monthly Cost",
                 value: Formatters.formatCost(viewModel.totalMonthlyCost),
-                subtitle: "all providers combined",
+                subtitle: "all accounts combined",
                 valueColor: viewModel.totalMonthlyCost > 0 ? .grafanaGreen : .grafanaTextDisabled,
                 icon: "dollarsign.circle",
                 accentColor: .grafanaGreen
             )
 
             StatPanelView(
-                title: "Active Providers",
-                value: "\(viewModel.configuredProviders.count)",
-                subtitle: "of \(Provider.allCases.count) available",
+                title: "Active Accounts",
+                value: "\(viewModel.configuredAccounts.count)",
+                subtitle: "of \(viewModel.accountStore.accounts.count) configured",
                 valueColor: .grafanaBlue,
                 icon: "cloud.fill",
                 accentColor: .grafanaBlue
@@ -219,27 +203,27 @@ struct DashboardView: View {
 
     // MARK: - Computed helpers
 
-    private var cloudProviders: [Provider] {
-        viewModel.configuredProviders.filter(\.isCloudProvider)
+    private var cloudAccounts: [Account] {
+        viewModel.configuredAccounts.filter(\.providerType.isCloudProvider)
     }
 
-    private var aiProviders: [Provider] {
-        viewModel.configuredProviders.filter(\.isAIProvider)
+    private var aiAccounts: [Account] {
+        viewModel.configuredAccounts.filter(\.providerType.isAIProvider)
     }
 
     private var totalResources: Int {
-        viewModel.providerStatuses.values.reduce(0) { $0 + $1.resources.count }
+        viewModel.accountStatuses.values.reduce(0) { $0 + $1.resources.count }
     }
 
     private var alertCount: Int {
-        viewModel.providerStatuses.values
+        viewModel.accountStatuses.values
             .flatMap(\.resources)
             .filter { $0.utilizationLevel == .critical }
             .count
     }
 
     private var warningCount: Int {
-        viewModel.providerStatuses.values
+        viewModel.accountStatuses.values
             .flatMap(\.resources)
             .filter { $0.utilizationLevel == .warning }
             .count
