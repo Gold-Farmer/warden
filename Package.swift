@@ -17,5 +17,10 @@ let package = Package(
             dependencies: ["KeychainAccess"],
             path: "Warden"
         ),
+        .testTarget(
+            name: "WardenTests",
+            dependencies: ["Warden"],
+            path: "Tests"
+        ),
     ]
 )
