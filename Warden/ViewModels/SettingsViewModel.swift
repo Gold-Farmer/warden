@@ -144,8 +144,12 @@ final class SettingsViewModel {
         case .openai(let key, let org):
             form.apiKey = key
             form.organizationId = org ?? ""
+        case .openaiOAuth:
+            break // OAuth tokens are managed internally
         case .anthropic(let key):
             form.apiKey = key
+        case .anthropicOAuth:
+            break // OAuth tokens are managed internally
         case .gemini(let key):
             form.apiKey = key
         case .grok(let key):

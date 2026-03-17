@@ -3,20 +3,37 @@ import Foundation
 actor OpenAIService: ProviderService {
     let provider = Provider.openai
     private(set) var isConfigured = false
-    private var apiKey = ""
+    private var bearerToken = ""
     private var organizationId: String?
+    private var oauthCredentials: Credentials?
 
     func configure(with credentials: Credentials) throws {
-        guard case .openai(let key, let orgId) = credentials else {
+        switch credentials {
+        case .openai(let key, let orgId):
+            bearerToken = key
+            organizationId = orgId
+            oauthCredentials = nil
+        case .openaiOAuth(let accessToken, _, _, _):
+            bearerToken = accessToken
+            organizationId = nil
+            oauthCredentials = credentials
+        default:
             throw ProviderServiceError.invalidCredentials
         }
-        apiKey = key
-        organizationId = orgId
         isConfigured = true
     }
 
     func fetchStatus() async throws -> ProviderStatus {
         guard isConfigured else { throw ProviderServiceError.notConfigured }
+
+        // Refresh token if expired
+        if let oauth = oauthCredentials,
+           case .openaiOAuth(_, _, let expiresAt, _) = oauth,
+           expiresAt < Date() {
+            if let refreshed = await OpenAIOAuthClient.refresh(oauth) {
+                try configure(with: refreshed)
+            }
+        }
 
         async let usage = fetchUsage()
         async let rateLimits = fetchRateLimits()
@@ -37,7 +54,7 @@ actor OpenAIService: ProviderService {
     }
 
     private var authHeaders: [String: String] {
-        var headers = ["Authorization": "Bearer \(apiKey)"]
+        var headers = ["Authorization": "Bearer \(bearerToken)"]
         if let orgId = organizationId {
             headers["OpenAI-Organization"] = orgId
         }
@@ -50,8 +67,6 @@ actor OpenAIService: ProviderService {
         let calendar = Calendar.current
         let now = Date()
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd"
 
         let url = URL(string: "https://api.openai.com/v1/organization/costs?start_time=\(Int(startOfMonth.timeIntervalSince1970))&end_time=\(Int(now.timeIntervalSince1970))&group_by=line_item")!
 
@@ -104,7 +119,6 @@ actor OpenAIService: ProviderService {
     // MARK: - Rate Limits (probed from a lightweight request)
 
     private func fetchRateLimits() async throws -> [ResourceQuota] {
-        // Make a lightweight models list request to capture rate limit headers
         let url = URL(string: "https://api.openai.com/v1/models")!
         let (_, _, headers) = try await HTTPClient.shared.rawRequest(url, headers: authHeaders)
 

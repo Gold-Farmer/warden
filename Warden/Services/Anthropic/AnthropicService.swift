@@ -4,20 +4,36 @@ actor AnthropicService: ProviderService {
     let provider = Provider.anthropic
     private(set) var isConfigured = false
     private var apiKey = ""
+    private var oauthCredentials: Credentials?
 
     // Cache rate limit info from the most recent API call
     private var cachedRateLimits: [ResourceQuota] = []
 
     func configure(with credentials: Credentials) throws {
-        guard case .anthropic(let key) = credentials else {
+        switch credentials {
+        case .anthropic(let key):
+            apiKey = key
+            oauthCredentials = nil
+        case .anthropicOAuth(let accessToken, _, _):
+            apiKey = accessToken
+            oauthCredentials = credentials
+        default:
             throw ProviderServiceError.invalidCredentials
         }
-        apiKey = key
         isConfigured = true
     }
 
     func fetchStatus() async throws -> ProviderStatus {
         guard isConfigured else { throw ProviderServiceError.notConfigured }
+
+        // Refresh token if expired
+        if let oauth = oauthCredentials,
+           case .anthropicOAuth(_, _, let expiresAt) = oauth,
+           expiresAt < Date() {
+            if let refreshed = await AnthropicOAuthClient.refresh(oauth) {
+                try configure(with: refreshed)
+            }
+        }
 
         async let usage = fetchUsage()
         async let rateLimits = fetchRateLimitsFromProbe()
@@ -38,10 +54,18 @@ actor AnthropicService: ProviderService {
     }
 
     private var authHeaders: [String: String] {
-        [
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-        ]
+        if oauthCredentials != nil {
+            // OAuth tokens use Bearer auth
+            return [
+                "Authorization": "Bearer \(apiKey)",
+                "anthropic-version": "2023-06-01",
+            ]
+        } else {
+            return [
+                "x-api-key": apiKey,
+                "anthropic-version": "2023-06-01",
+            ]
+        }
     }
 
     // MARK: - Usage
@@ -99,7 +123,6 @@ actor AnthropicService: ProviderService {
 
     private func fetchRateLimitsFromProbe() async throws -> [ResourceQuota] {
         // Make a lightweight request to capture rate limit headers
-        // Using the messages count endpoint or a minimal messages request
         let url = URL(string: "https://api.anthropic.com/v1/messages/count_tokens")!
         let body = """
         {"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}]}

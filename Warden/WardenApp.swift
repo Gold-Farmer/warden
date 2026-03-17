@@ -54,8 +54,8 @@ private struct MenuBarContainer: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if let vm = dashboardViewModel {
-            MenuBarSummaryView(viewModel: vm) {
+        if let vm = dashboardViewModel, let svm = settingsViewModel {
+            MenuBarSummaryView(viewModel: vm, settingsViewModel: svm) {
                 openWindow(id: "dashboard")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             }

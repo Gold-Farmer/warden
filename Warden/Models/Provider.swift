@@ -51,6 +51,19 @@ enum Provider: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
+    var shortName: String {
+        switch self {
+        case .aws: "AWS"
+        case .gcp: "GCP"
+        case .azure: "Azure"
+        case .cloudflare: "CF"
+        case .openai: "OpenAI"
+        case .anthropic: "Claude"
+        case .gemini: "Gemini"
+        case .grok: "Grok"
+        }
+    }
+
     var isCloudProvider: Bool {
         switch self {
         case .aws, .gcp, .azure, .cloudflare: true
