@@ -22,6 +22,27 @@ struct ProviderStatus: Sendable {
             .map { $0 }
     }
 
+    // MARK: - Metric bridge
+
+    var metrics: [Metric] {
+        resources.map { Metric(from: $0) }
+    }
+
+    var metricsByCategory: [(category: MetricCategory, metrics: [Metric])] {
+        let grouped = Dictionary(grouping: metrics, by: \.category)
+        return MetricCategory.allCases.compactMap { cat in
+            guard let items = grouped[cat], !items.isEmpty else { return nil }
+            return (category: cat, metrics: items)
+        }
+    }
+
+    var topMetrics: [Metric] {
+        metrics
+            .sorted { $0.severity > $1.severity }
+            .prefix(3)
+            .map { $0 }
+    }
+
     enum Health: Sendable {
         case healthy
         case warning
