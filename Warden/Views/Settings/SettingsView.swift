@@ -16,6 +16,10 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Proxy") {
+                proxySection
+            }
+
             Section {
                 ForEach(viewModel.accountStore.accounts) { account in
                     accountSection(for: account)
@@ -194,6 +198,171 @@ struct SettingsView: View {
 
         case .anthropic, .gemini, .grok:
             SecureField("API Key", text: form.apiKey)
+        }
+    }
+
+    // MARK: - Proxy Section
+
+    @ViewBuilder
+    private var proxySection: some View {
+        let proxy = Binding(
+            get: { viewModel.proxyStore.configuration },
+            set: {
+                viewModel.proxyStore.configuration = $0
+                // Clear previous test state when config changes
+                viewModel.proxyStore.testState = .idle
+                viewModel.proxyStore.validationError = nil
+            }
+        )
+
+        Toggle("Enable Proxy", isOn: proxy.enabled)
+
+        if proxy.enabled.wrappedValue {
+            Picker("Protocol", selection: proxy.protocol) {
+                ForEach(ProxyProtocol.allCases) { proto in
+                    Text(proto.rawValue).tag(proto)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            // Host + Port with inline validation
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    TextField("Host", text: proxy.host)
+                        .textFieldStyle(.roundedBorder)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(
+                                    viewModel.proxyStore.validationError?.field == "host" ? .red : .clear,
+                                    lineWidth: 1.5
+                                )
+                        )
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    TextField("Port", value: proxy.port, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(
+                                    viewModel.proxyStore.validationError?.field == "port" ? .red : .clear,
+                                    lineWidth: 1.5
+                                )
+                        )
+                }
+            }
+
+            if proxy.protocol.wrappedValue.supportsAuth {
+                TextField("Username (optional)", text: proxy.username)
+                SecureField("Password (optional)", text: proxy.password)
+            }
+
+            TextField("Bypass (comma-separated)", text: Binding(
+                get: { proxy.bypassList.wrappedValue.joined(separator: ", ") },
+                set: { proxy.bypassList.wrappedValue = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
+            ))
+            .font(.system(.body, design: .monospaced))
+            .help("Domains that bypass the proxy, e.g. localhost, 127.0.0.1, *.internal")
+
+            // Quick URL import
+            HStack {
+                TextField("Or paste proxy URL", text: $viewModel.proxyStore.proxyURL)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .help("e.g. socks5://user:pass@host:1080")
+                Button("Apply") {
+                    viewModel.proxyStore.applyURL()
+                }
+                .disabled(viewModel.proxyStore.proxyURL.isEmpty)
+            }
+
+            Divider()
+
+            // Save & Test button + status
+            proxyTestSection
+        }
+    }
+
+    @ViewBuilder
+    private var proxyTestSection: some View {
+        let state = viewModel.proxyStore.testState
+
+        HStack(spacing: 12) {
+            Button {
+                Task { await viewModel.proxyStore.validateAndTest() }
+            } label: {
+                HStack(spacing: 6) {
+                    if state == .validating || state == .testing {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(proxyButtonLabel(for: state))
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(state == .validating || state == .testing)
+
+            Spacer()
+
+            // Status display
+            switch state {
+            case .idle:
+                EmptyView()
+
+            case .validating:
+                Label("Checking...", systemImage: "doc.text.magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+
+            case .testing:
+                Label("Connecting through proxy...", systemImage: "network")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+
+            case .success:
+                ProxySuccessBadge()
+
+            case .failure:
+                EmptyView() // Error shown below
+            }
+        }
+
+        // Error banner
+        if case .failure(let message) = state {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.title3)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Proxy not working")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.orange.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+    }
+
+    private func proxyButtonLabel(for state: ProxyStore.ProxyTestState) -> String {
+        switch state {
+        case .idle: "Save & Test"
+        case .validating: "Validating..."
+        case .testing: "Testing..."
+        case .success: "Save & Test"
+        case .failure: "Retry"
         }
     }
 

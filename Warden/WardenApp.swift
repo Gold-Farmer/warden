@@ -5,6 +5,7 @@ struct WardenApp: App {
     @State private var registry = ServiceRegistry()
     @State private var scheduler = RefreshScheduler()
     @State private var accountStore = AccountStore()
+    @State private var proxyStore = ProxyStore()
     @State private var dashboardViewModel: DashboardViewModel?
     @State private var settingsViewModel: SettingsViewModel?
 
@@ -41,7 +42,7 @@ struct WardenApp: App {
     private func createViewModels() {
         guard dashboardViewModel == nil else { return }
         dashboardViewModel = DashboardViewModel(registry: registry, scheduler: scheduler, accountStore: accountStore)
-        settingsViewModel = SettingsViewModel(registry: registry, accountStore: accountStore)
+        settingsViewModel = SettingsViewModel(registry: registry, accountStore: accountStore, proxyStore: proxyStore)
     }
 }
 
