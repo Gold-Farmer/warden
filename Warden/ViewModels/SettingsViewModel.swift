@@ -17,12 +17,20 @@ final class SettingsViewModel {
     var newAccountProvider: Provider = .aws
     var newAccountLabel = ""
 
+    enum AWSAuthMode: String, CaseIterable {
+        case accessKey = "Access Key"
+        case profile = "AWS Profile"
+    }
+
     struct CredentialForm {
         // AWS
+        var awsAuthMode: AWSAuthMode = .accessKey
         var awsAccessKeyId = ""
         var awsSecretAccessKey = ""
         var awsRegion = "us-east-1"
         var awsSessionToken = ""
+        var awsProfileName = "default"
+        var awsProfileRegionOverride = ""
 
         // GCP
         var gcpServiceAccountJSON = ""
@@ -127,10 +135,15 @@ final class SettingsViewModel {
     private func populateForm(_ form: inout CredentialForm, from creds: Credentials) {
         switch creds {
         case .aws(let key, let secret, let region, let token):
+            form.awsAuthMode = .accessKey
             form.awsAccessKeyId = key
             form.awsSecretAccessKey = secret
             form.awsRegion = region
             form.awsSessionToken = token ?? ""
+        case .awsProfile(let name, let region):
+            form.awsAuthMode = .profile
+            form.awsProfileName = name
+            form.awsProfileRegionOverride = region ?? ""
         case .gcp(let json):
             form.gcpServiceAccountJSON = String(data: json, encoding: .utf8) ?? ""
         case .azure(let tenant, let client, let secret, let sub):
@@ -160,12 +173,20 @@ final class SettingsViewModel {
     private func buildCredentials(provider: Provider, form: CredentialForm) -> Credentials? {
         switch provider {
         case .aws:
-            .aws(
-                accessKeyId: form.awsAccessKeyId,
-                secretAccessKey: form.awsSecretAccessKey,
-                region: form.awsRegion,
-                sessionToken: form.awsSessionToken.isEmpty ? nil : form.awsSessionToken
-            )
+            switch form.awsAuthMode {
+            case .accessKey:
+                .aws(
+                    accessKeyId: form.awsAccessKeyId,
+                    secretAccessKey: form.awsSecretAccessKey,
+                    region: form.awsRegion,
+                    sessionToken: form.awsSessionToken.isEmpty ? nil : form.awsSessionToken
+                )
+            case .profile:
+                .awsProfile(
+                    profileName: form.awsProfileName,
+                    region: form.awsProfileRegionOverride.isEmpty ? nil : form.awsProfileRegionOverride
+                )
+            }
         case .gcp:
             .gcp(serviceAccountJSON: Data(form.gcpServiceAccountJSON.utf8))
         case .azure:

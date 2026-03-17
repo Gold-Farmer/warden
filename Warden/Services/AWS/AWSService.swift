@@ -10,13 +10,21 @@ actor AWSService: ProviderService {
     private var sessionToken: String?
 
     func configure(with credentials: Credentials) throws {
-        guard case .aws(let key, let secret, let reg, let token) = credentials else {
+        switch credentials {
+        case .aws(let key, let secret, let reg, let token):
+            accessKeyId = key
+            secretAccessKey = secret
+            region = reg
+            sessionToken = token
+        case .awsProfile(let profileName, let regionOverride):
+            let resolved = try AWSProfileResolver.resolve(profileName: profileName, regionOverride: regionOverride)
+            accessKeyId = resolved.accessKeyId
+            secretAccessKey = resolved.secretAccessKey
+            region = resolved.region
+            sessionToken = resolved.sessionToken
+        default:
             throw ProviderServiceError.invalidCredentials
         }
-        accessKeyId = key
-        secretAccessKey = secret
-        region = reg
-        sessionToken = token
         isConfigured = true
     }
 

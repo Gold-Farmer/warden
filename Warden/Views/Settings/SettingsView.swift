@@ -153,10 +153,21 @@ struct SettingsView: View {
 
         switch account.providerType {
         case .aws:
-            SecureField("Access Key ID", text: form.awsAccessKeyId)
-            SecureField("Secret Access Key", text: form.awsSecretAccessKey)
-            TextField("Region", text: form.awsRegion)
-            SecureField("Session Token (optional)", text: form.awsSessionToken)
+            Picker("Auth Mode", selection: form.awsAuthMode) {
+                ForEach(SettingsViewModel.AWSAuthMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if form.awsAuthMode.wrappedValue == .accessKey {
+                SecureField("Access Key ID", text: form.awsAccessKeyId)
+                SecureField("Secret Access Key", text: form.awsSecretAccessKey)
+                TextField("Region", text: form.awsRegion)
+                SecureField("Session Token (optional)", text: form.awsSessionToken)
+            } else {
+                awsProfileFields(form: form)
+            }
 
         case .gcp:
             TextEditor(text: form.gcpServiceAccountJSON)
@@ -184,5 +195,28 @@ struct SettingsView: View {
         case .anthropic, .gemini, .grok:
             SecureField("API Key", text: form.apiKey)
         }
+    }
+
+    // MARK: - AWS Profile Fields
+
+    @ViewBuilder
+    private func awsProfileFields(form: Binding<SettingsViewModel.CredentialForm>) -> some View {
+        let profiles = AWSProfileResolver.availableProfiles()
+
+        if profiles.isEmpty {
+            Text("No profiles found in ~/.aws/credentials")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+            TextField("Profile Name", text: form.awsProfileName)
+        } else {
+            Picker("Profile", selection: form.awsProfileName) {
+                ForEach(profiles, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+        }
+
+        TextField("Region Override (optional)", text: form.awsProfileRegionOverride)
+            .help("Leave empty to use region from ~/.aws/config")
     }
 }

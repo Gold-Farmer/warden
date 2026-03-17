@@ -2,6 +2,7 @@ import Foundation
 
 enum Credentials: Codable, Sendable, Equatable {
     case aws(accessKeyId: String, secretAccessKey: String, region: String, sessionToken: String? = nil)
+    case awsProfile(profileName: String, region: String? = nil)
     case gcp(serviceAccountJSON: Data)
     case azure(tenantId: String, clientId: String, clientSecret: String, subscriptionId: String)
     case cloudflare(apiToken: String, accountId: String)
@@ -15,6 +16,7 @@ enum Credentials: Codable, Sendable, Equatable {
     var provider: Provider {
         switch self {
         case .aws: .aws
+        case .awsProfile: .aws
         case .gcp: .gcp
         case .azure: .azure
         case .cloudflare: .cloudflare
@@ -32,6 +34,8 @@ enum Credentials: Codable, Sendable, Equatable {
         switch self {
         case .aws(let key, let secret, let region, _):
             !key.isEmpty && !secret.isEmpty && !region.isEmpty
+        case .awsProfile(let name, _):
+            !name.isEmpty
         case .gcp(let json):
             !json.isEmpty
         case .azure(let tenant, let client, let secret, let sub):
