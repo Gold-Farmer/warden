@@ -3,10 +3,15 @@ import Foundation
 struct HTTPClient: Sendable {
     static let shared = HTTPClient()
 
-    private let session: URLSession
+    private let sessionOverride: URLSession?
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    /// Use the proxy-aware session by default; pass an explicit session to bypass proxy.
+    init(session: URLSession? = nil) {
+        self.sessionOverride = session
+    }
+
+    private var session: URLSession {
+        sessionOverride ?? ProxySessionProvider.shared.session
     }
 
     func request<T: Decodable & Sendable>(

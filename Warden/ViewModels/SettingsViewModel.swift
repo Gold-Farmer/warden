@@ -5,6 +5,7 @@ import Foundation
 final class SettingsViewModel {
     let registry: ServiceRegistry
     let accountStore: AccountStore
+    var proxyStore: ProxyStore
     private let keychain = KeychainManager.shared
 
     var refreshInterval: TimeInterval = 300
@@ -55,9 +56,10 @@ final class SettingsViewModel {
         case failure(String)
     }
 
-    init(registry: ServiceRegistry, accountStore: AccountStore) {
+    init(registry: ServiceRegistry, accountStore: AccountStore, proxyStore: ProxyStore) {
         self.registry = registry
         self.accountStore = accountStore
+        self.proxyStore = proxyStore
         loadExistingCredentials()
     }
 
